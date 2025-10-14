@@ -1,0 +1,237 @@
+{
+  "name": "Tesis",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "70a965b3-b630-45d0-917f-70007e189a95",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -272,
+        -240
+      ],
+      "id": "726053fb-309a-471c-b7ae-3d264c085ccc",
+      "name": "Webhook",
+      "webhookId": "70a965b3-b630-45d0-917f-70007e189a95"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -240
+      ],
+      "id": "609047a8-ef12-4abb-ade1-2fb3fda8c3f0",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "deepseek/deepseek-chat-v3.1:free",
+          "mode": "list",
+          "cachedResultName": "deepseek/deepseek-chat-v3.1:free"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        128,
+        -64
+      ],
+      "id": "9df034fb-f1ad-4cc5-8192-fd1ab731337e",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "jy4SD2ZTeTufL0yd",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Comportate como experto en orientador laboral, de estos datos extraidos de un CV ({{ $json.text }}) necesito que lo analices, y me respondas con un puesto de trabajo que se pueda encontrar comunmente en linkedin Perú, solo quiero que me devuelvas como resultado el nombre del puesto de trabajo. (tiene que ser muy corto, no agregues palabras que no sean comunes en las busquedas de linkedin) (siempre tiene que tener la palabra \"practicante\" antes del puesto de trabajo, porque quiero que busque trabajos para practicas profesionales)",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        -256
+      ],
+      "id": "423a5bc2-67f5-49c1-a9be-7cddb5940b2f",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/BHzefUZlZRKWxkTck/runs?token=apify_api_alCJyOx2KWuJMwK3S0kWNZieSFNdRR43S2vM&waitForFinish=120",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"location\": \"Perú\",\n    \"proxy\": {\n        \"useApifyProxy\": true,\n        \"apifyProxyGroups\": [\n            \"RESIDENTIAL\"\n        ]\n    },\n    \"rows\": 5,\n    \"title\": \"{{ $json.output }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        496,
+        -256
+      ],
+      "id": "0480c1f6-bbd6-44c0-8ef0-3d9790b5cab4",
+      "name": "Linkedin"
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "={{ $json.data.defaultDatasetId }}"
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -256
+      ],
+      "id": "0909813d-7efc-47c5-a937-d2eda06b0a44",
+      "name": "Get dataset items",
+      "credentials": {
+        "apifyApi": {
+          "id": "EVKWvSDw1opWPsAH",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://analisis-de-cv-con-ia.vercel.app/api/results/{{ $('Webhook').first().json.body.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.jobs }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        -256
+      ],
+      "id": "8371ecfd-df77-44c8-89de-dfd32c7ed193",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      jobs: items.map(item => ({\n        title: item.json.title,\n        company: item.json.companyName,\n        location: item.json.location,\n        url: item.json.jobUrl,\n        description: item.json.description,\n        publishedAt: item.json.publishedAt,\n        applicationsCount: item.json.applicationsCount,\n        applyUrl: item.json.applyUrl,\n        descriptionHtml: item.json.descriptionHtml,\n        \n      }))\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        -256
+      ],
+      "id": "b25e1d56-3444-4e2b-9787-2ee36f4edf42",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Linkedin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linkedin": {
+      "main": [
+        [
+          {
+            "node": "Get dataset items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get dataset items": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "89b5a887-2b6a-4cab-abee-218e5db93b20",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b70366e40a8bfedafa97ba89a8aca74888720bf639540162cd7cdc6209f11b15"
+  },
+  "id": "onM8kzefaZnrsPkb",
+  "tags": []
+}

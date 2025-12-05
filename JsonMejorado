@@ -1,0 +1,1535 @@
+{
+  "name": "Tesis 1.3",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cv-match",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        -16
+      ],
+      "id": "7e0fd080-0167-4863-82dc-684913e877a3",
+      "name": "Webhook",
+      "webhookId": "a596fcf4-89d2-4352-874b-09d0aa03387a"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/bebity~linkedin-jobs-scraper/runs?token=apify_api_l78nPpgDfOHUmRrtt7yP11jDRbFdoI0cI5Pd&waitForFinish=300",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"location\": \"Perú\",\n    \"proxy\": {\n        \"useApifyProxy\": true,\n        \"apifyProxyGroups\": [\n            \"RESIDENTIAL\"\n        ]\n    },\n    \"rows\": 5,\n    \"title\": \"{{ $json.puesto_sugerido }}\"\n}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        16
+      ],
+      "id": "cec1b8fa-a912-4bef-bd4b-43ae4c452def",
+      "name": "Linkedin Scraper"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "cv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        448,
+        96
+      ],
+      "id": "e24a596c-5748-4c17-8737-40c92d70eb53",
+      "name": "Extraer datos"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=necesito que analices bien los datos que te pasaré (el CV: {{ $json.text }}), y me recomiendes un puesto de trabajo de Ingeniería de Sistemas o afines que se pueda encontrar fácilmente. La persona busca prácticas pre profesionales.\n\n**REGLAS DE FORMATO ESTRICTAS:**\n1.  **Siempre** debe empezar con la palabra \"practicante\".\n2.  **No** uses \"practicante desarrollador\"; usa \"practicante desarrollo de software\".\n3.  **No** uses guiones, símbolos, ni caracteres especiales (ej. \\n, \\t).\n4.  La respuesta debe ser **SOLO** el nombre del puesto recomendado.\n\n**EJEMPLO DE RESPUESTA REQUERIDA:**\npracticante soporte técnico",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        912,
+        128
+      ],
+      "id": "8683870d-5d59-46f7-a970-de2f291f6bfb",
+      "name": "Analizador con IA"
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "={{ $json.data.defaultDatasetId }}",
+        "offset": {},
+        "limit": {}
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        240
+      ],
+      "id": "ff9f7ceb-1f7b-4454-8330-dde44fb55e90",
+      "name": "Obtener datos Indeed",
+      "alwaysOutputData": false,
+      "credentials": {
+        "apifyApi": {
+          "id": "lJn7WiAGUuJC2v9Q",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "={{ $json.data.defaultDatasetId }}",
+        "offset": {},
+        "limit": {}
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        16
+      ],
+      "id": "c2487860-8d6e-4cd2-9d0a-212337c68d75",
+      "name": "Obtener datos Linkedin",
+      "alwaysOutputData": false,
+      "credentials": {
+        "apifyApi": {
+          "id": "lJn7WiAGUuJC2v9Q",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- RUN ONCE FOR ALL ITEMS --- //\n// Trae todas las filas del nodo anterior (soporta 1 item con array o N items)\nconst rows = $input.all().flatMap(i =>\n  Array.isArray(i.json) ? i.json : [i.json]\n);\n\n// Convierte \"hace 1 día / 2 semanas / 3 horas / 1 mes\" a ISO.\n// Si existe postingDateParsed, lo usa como prioridad.\nfunction toISOFromRelative(relative, parsedISO) {\n  // Si ya viene ISO, úsalo\n  if (parsedISO) {\n    try { return new Date(parsedISO).toISOString(); } catch { /* ignore */ }\n  }\n\n  // Sin relativo, no se puede\n  if (!relative) return '';\n\n  const s = String(relative).trim();                  // ej: \"hace 2 semanas\"\n  const m = s.match(/hace\\s+(\\d+)\\s+(\\w+)/i);\n  if (!m) return '';                                  // no se pudo interpretar\n\n  const n = parseInt(m[1], 10) || 0;                  // cantidad\n  const unitKey = (m[2] || '').toLowerCase();         // unidad en español\n\n  // Decide los milisegundos por unidad sin usar mapas con corchetes\n  let msPerUnit = 86400000; // por defecto 'día'\n\n  if (unitKey.startsWith('hora')) {\n    msPerUnit = 3600000;                              // hora\n  } else if (unitKey.startsWith('semana')) {\n    msPerUnit = 7 * 86400000;                         // semana\n  } else if (unitKey.startsWith('mes')) {\n    msPerUnit = 30 * 86400000;                        // mes (aprox)\n  } else if (unitKey.startsWith('día') || unitKey.startsWith('dia')) {\n    msPerUnit = 86400000;                             // día\n  }\n\n  const ts = Date.now() - (msPerUnit * n);\n  try { return new Date(ts).toISOString(); } catch { return ''; }\n}\n\n// Mapea al formato común, usando los nombres que te da el scraper de Indeed\nconst out = rows.map(r => ({\n  title:       String(r.positionName ?? r.title ?? ''),\n  company:     String(r.company ?? r.companyName ?? ''),\n  location:    String(r.location ?? ''),\n  url:         String(r.url ?? ''),\n  description: String(r.description ?? ''),\n  publishedAt: toISOFromRelative(r.postedAt, r.postingDateParsed),\n  applyUrl:    String(r.externalApplyLink ?? r.url ?? ''),\n  salary:      String(r.salary ?? ''),\n  source:      'indeed',\n}));\n\n// Devuelve 1 item por oferta\nreturn out.map(j => ({ json: j }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        240
+      ],
+      "id": "36399b83-e0d8-425d-b3c0-c2b02d498763",
+      "name": "Normalizacion Linkedin"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Configura aquí el nombre EXACTO del nodo Webhook ===\nconst WH_NAME = 'Webhook'; // cámbialo si tu nodo se llama distinto\n\n// 1) Tomar sessionId del Webhook (body o query), con fallback\nconst whItem = $(WH_NAME)?.first?.();\nconst body = whItem?.json?.body ?? {};\nconst query = whItem?.json?.query ?? {};\nconst sessionId = String(body?.sessionId ?? query?.sessionId ?? 'missing-session');\n\n// 2) Leer todos los items de entrada a ESTE Code node\nconst inputItems = $input.all();  // <-- en Code node se usa $input, no $json ni items\n\n// 3) Normalizar ofertas (evita undefined/tipos raros)\nconst jobs = inputItems.map((i) => {\n  const j = i.json || {};\n  return {\n    title: String(j.title ?? ''),\n    company: String(j.companyName ?? j.company ?? ''),\n    location: String(j.location ?? ''),\n    url: String(j.jobUrl ?? j.url ?? ''),\n    description: String(j.description ?? ''),\n    publishedAt: String(j.publishedAt ?? ''),\n    applyUrl: String(j.applyUrl ?? ''),\n  };\n});\n\n// 4) Devolver EXACTAMENTE { sessionId, jobs }\nreturn [{ json: { sessionId, jobs } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        16
+      ],
+      "id": "1e813b0e-ad8d-4610-b7bb-b5a1531618f0",
+      "name": "Normalizacion Indeed"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2016,
+        128
+      ],
+      "id": "c8f8cba5-bdca-4e09-abed-851e8d8b42d7",
+      "name": "Une Datos"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2042ee0c-3d3a-43ac-955f-02e3ebbe82a8",
+              "leftValue": "={{ $json.body.allowStorage }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        -16
+      ],
+      "id": "66c9b47b-de63-404e-a0c0-e0019c5640bd",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "cvs_guardados",
+          "mode": "list",
+          "cachedResultName": "cvs_guardados"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1424,
+        -512
+      ],
+      "id": "73c17b65-c70b-4d67-becc-ca023d3757f5",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "oUc0yMc0pGndmmsF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        -368
+      ],
+      "id": "072b1888-c8c3-4365-a927-17b0d8b20a21",
+      "name": "Default Data Loader1"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        -352
+      ],
+      "id": "b7999615-41a2-474f-91ac-69cdd24509c7",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        912,
+        288
+      ],
+      "id": "eeb95501-8e8b-407b-aee1-ac35a8ceadf1",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        736,
+        -416
+      ],
+      "id": "3c5feff6-477b-4249-b323-f175184e65c9",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Use this knowledge base to answer questions from the user",
+        "tableName": {
+          "__rl": true,
+          "value": "cvs_guardados",
+          "mode": "list",
+          "cachedResultName": "cvs_guardados"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        848,
+        -384
+      ],
+      "id": "6f34e5f1-da8b-4c71-b62c-248c5f315310",
+      "name": "Supabase Vector Store1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "oUc0yMc0pGndmmsF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=si encuentras el mismo archivo o uno muy parecido o igual al siguiente cv: {{ $json.text }} responde si, si no, responde no y sin punto final, ademas de consultar si hay algun registro en la base de datos vectoria con la herramienta de supabase vector, pero solo responde con un si o un no",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        736,
+        -592
+      ],
+      "id": "fde4eea5-1165-448e-b697-48cab4a22470",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        928,
+        -224
+      ],
+      "id": "67dfd40d-aba5-4f88-9a55-dbcf8e1c8dfc",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "cv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -496
+      ],
+      "id": "fbb1d655-f517-47e2-a06c-3efad66c53c6",
+      "name": "Extraer datos1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fbfdb734-150b-4ebc-9c69-ab16fda6ea55",
+              "leftValue": "={{ $json.puesto_sugerido }}",
+              "rightValue": "si",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        -672
+      ],
+      "id": "a0a7e0a7-7561-469f-9365-3e77a948d4e1",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/misceres~indeed-scraper/runs?token=apify_api_l78nPpgDfOHUmRrtt7yP11jDRbFdoI0cI5Pd&waitForFinish=300",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"country\": \"PE\",\n    \"followApplyRedirects\": false,\n    \"maxItems\": 5,\n    \"parseCompanyDetails\": false,\n    \"position\": \"{{ $json.output }}\",\n    \"saveOnlyUniqueItems\": true\n}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        -576
+      ],
+      "id": "4a0b5089-cb3e-4d1c-af68-09ebd27745a2",
+      "name": "Indeed Sraper1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/bebity~linkedin-jobs-scraper/runs?token=apify_api_l78nPpgDfOHUmRrtt7yP11jDRbFdoI0cI5Pd&waitForFinish=300",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"location\": \"Perú\",\n    \"proxy\": {\n        \"useApifyProxy\": true,\n        \"apifyProxyGroups\": [\n            \"RESIDENTIAL\"\n        ]\n    },\n    \"rows\": 5,\n    \"title\": \"{{ $json.output }}\"\n}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        -800
+      ],
+      "id": "e132d6d5-c8a3-42cb-8e6f-671e3576a96f",
+      "name": "Linkedin Scraper1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=necesito que analices bien los datos que te pasare, y me recomiendes un puesto de trabajo que se pueda encontrar facil en las paginas de trabajo, siempre con la palabra \"practicante\" antes del puesto de trabajo que me recomiendes, nada de puestos de trabajos dificiles,solo el puesto recomendado, nada de mucho texto, los mas comunes, sin guiones ni nada solo el texto, la mayoria seran cv de personas que buscan practicas pre profesionales que estudian ingenieria de sistemas, asi que analiza a que rama o puesto de trabajo de ingenieria de sistemas o afines recomiendas que postule, pero no me des \"practicande desarrollador\", si me das eso pon \"practicante desarrollo de software\" todo esto de la informacion que te mandare:   {{ $json.text }},{{ $json.session_id }}  analizalo bien y dame una recomendacion de puesto de trabajo correcta",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        -672
+      ],
+      "id": "0f0e6b1f-8f6d-4f56-b7c0-5d891460c6ec",
+      "name": "Analizador con IA1"
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "={{ $json.data.defaultDatasetId }}",
+        "offset": {},
+        "limit": {}
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        -560
+      ],
+      "id": "1773d5b9-86f7-47b3-94bb-6d52f754b6c0",
+      "name": "Obtener datos Indeed1",
+      "alwaysOutputData": false,
+      "credentials": {
+        "apifyApi": {
+          "id": "lJn7WiAGUuJC2v9Q",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "={{ $json.data.defaultDatasetId }}",
+        "offset": {},
+        "limit": {}
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        -800
+      ],
+      "id": "24aecfdc-d335-4141-9cca-346b7b46b279",
+      "name": "Obtener datos Linkedin1",
+      "alwaysOutputData": false,
+      "credentials": {
+        "apifyApi": {
+          "id": "lJn7WiAGUuJC2v9Q",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// La variable 'items' contiene el único ítem de salida del AI Agent\nconst agentOutputItem = items[0].json; \nconst consolidatedJobs = []; // Cambiamos el nombre para reflejar la consolidación\n\n// 1. LIMPIEZA DE LA SALIDA DEL AGENTE\n// Elimina las cercas de código Markdown (```json) y cualquier texto extra.\nconst rawOutput = String(agentOutputItem.rawOutput || agentOutputItem.output);\nlet jsonString = rawOutput\n    .trim()\n    .replace(/^```json\\s*/i, '') // Elimina la etiqueta inicial ```json\n    .replace(/\\s*```$/, '');      // Elimina la etiqueta final ```\n\n// 2. Parsear el JSON\nlet rawJobs;\ntry {\n    rawJobs = JSON.parse(jsonString);\n} catch (e) {\n    console.error(\"Fallo al parsear el JSON del Agente después de limpiar:\", e);\n    // Retorna una respuesta de error en el formato final consolidado\n    return [{\n        json: {\n            error: true,\n            message: \"Fallo al procesar el JSON del Agente.\",\n            rawOutput: rawOutput,\n            jobs: []\n        }\n    }];\n}\n\n// 3. Normalizar y simplificar cada objeto de práctica\nfor (const job of rawJobs) {\n    // Limpieza de la descripción\n    const cleanedDescription = String(job.description || '')\n        .replace(/\\\\n/g, ' ') \n        .replace(/\\s+/g, ' ') \n        .trim();\n\n    // Redondear el porcentaje de similitud a 2 decimales\n    const roundedSimilarity = parseFloat(job.similarity_percentage).toFixed(2);\n\n    consolidatedJobs.push({\n        title: job.title,\n        company: job.company || 'N/A',\n        location: job.location || 'N/A',\n        description: cleanedDescription,\n        similarity_percentage: roundedSimilarity,\n        url: job.url || 'N/A',\n    });\n}\n\n// 4. Retornar el resultado como UN ÚNICO ÍTEM DE N8N\n// El array 'consolidatedJobs' ahora es la propiedad 'jobs' dentro de un objeto JSON único.\nreturn [{\n    json: {\n        success: true,\n        total_jobs: consolidatedJobs.length,\n        jobs: consolidatedJobs\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3760,
+        -688
+      ],
+      "id": "d75faac7-a0bc-4a73-b87c-0310a8edc1af",
+      "name": "Code in JavaScript",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- RUN ONCE FOR ALL ITEMS --- //\n// Trae todas las filas del nodo anterior (soporta 1 item con array o N items)\nconst rows = $input.all().flatMap(i =>\n  Array.isArray(i.json) ? i.json : [i.json]\n);\n\n// Convierte \"hace 1 día / 2 semanas / 3 horas / 1 mes\" a ISO.\n// Si existe postingDateParsed, lo usa como prioridad.\nfunction toISOFromRelative(relative, parsedISO) {\n  // Si ya viene ISO, úsalo\n  if (parsedISO) {\n    try { return new Date(parsedISO).toISOString(); } catch { /* ignore */ }\n  }\n\n  // Sin relativo, no se puede\n  if (!relative) return '';\n\n  const s = String(relative).trim();                  // ej: \"hace 2 semanas\"\n  const m = s.match(/hace\\s+(\\d+)\\s+(\\w+)/i);\n  if (!m) return '';                                  // no se pudo interpretar\n\n  const n = parseInt(m[1], 10) || 0;                  // cantidad\n  const unitKey = (m[2] || '').toLowerCase();         // unidad en español\n\n  // Decide los milisegundos por unidad sin usar mapas con corchetes\n  let msPerUnit = 86400000; // por defecto 'día'\n\n  if (unitKey.startsWith('hora')) {\n    msPerUnit = 3600000;                              // hora\n  } else if (unitKey.startsWith('semana')) {\n    msPerUnit = 7 * 86400000;                         // semana\n  } else if (unitKey.startsWith('mes')) {\n    msPerUnit = 30 * 86400000;                        // mes (aprox)\n  } else if (unitKey.startsWith('día') || unitKey.startsWith('dia')) {\n    msPerUnit = 86400000;                             // día\n  }\n\n  const ts = Date.now() - (msPerUnit * n);\n  try { return new Date(ts).toISOString(); } catch { return ''; }\n}\n\n// Mapea al formato común, usando los nombres que te da el scraper de Indeed\nconst out = rows.map(r => ({\n  title:       String(r.positionName ?? r.title ?? ''),\n  company:     String(r.company ?? r.companyName ?? ''),\n  location:    String(r.location ?? ''),\n  url:         String(r.url ?? ''),\n  description: String(r.description ?? ''),\n  publishedAt: toISOFromRelative(r.postedAt, r.postingDateParsed),\n  applyUrl:    String(r.externalApplyLink ?? r.url ?? ''),\n  salary:      String(r.salary ?? ''),\n  source:      'indeed',\n}));\n\n// Devuelve 1 item por oferta\nreturn out.map(j => ({ json: j }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        -560
+      ],
+      "id": "b332f8fb-00a3-448b-af1e-4db472ebcfc8",
+      "name": "Normalizacion Linkedin1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Configura aquí el nombre EXACTO del nodo Webhook ===\nconst WH_NAME = 'Webhook'; // cámbialo si tu nodo se llama distinto\n\n// 1) Tomar sessionId del Webhook (body o query), con fallback\nconst whItem = $(WH_NAME)?.first?.();\nconst body = whItem?.json?.body ?? {};\nconst query = whItem?.json?.query ?? {};\nconst sessionId = String(body?.sessionId ?? query?.sessionId ?? 'missing-session');\n\n// 2) Leer todos los items de entrada a ESTE Code node\nconst inputItems = $input.all();  // <-- en Code node se usa $input, no $json ni items\n\n// 3) Normalizar ofertas (evita undefined/tipos raros)\nconst jobs = inputItems.map((i) => {\n  const j = i.json || {};\n  return {\n    title: String(j.title ?? ''),\n    company: String(j.companyName ?? j.company ?? ''),\n    location: String(j.location ?? ''),\n    url: String(j.jobUrl ?? j.url ?? ''),\n    description: String(j.description ?? ''),\n    publishedAt: String(j.publishedAt ?? ''),\n    applyUrl: String(j.applyUrl ?? ''),\n  };\n});\n\n// 4) Devolver EXACTAMENTE { sessionId, jobs }\nreturn [{ json: { sessionId, jobs } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        -784
+      ],
+      "id": "13296e51-dc91-4fae-8b15-001cece2185f",
+      "name": "Normalizacion Indeed1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2928,
+        -672
+      ],
+      "id": "518fdc3f-e710-462f-b476-b857a4c75f6b",
+      "name": "Une Datos1"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        -528
+      ],
+      "id": "3fbc66a0-6ad6-4b49-8d42-2be9b0db3ff6",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6382579-609b-4292-ae1c-bcc63e51b364",
+              "name": "text",
+              "value": "={{ $('Extraer datos1').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "c30065aa-27a9-4d8d-9d36-4145f1b3d595",
+              "name": "session_id",
+              "value": "={{ $('Webhook').item.json.body.session_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1504,
+        -688
+      ],
+      "id": "56673f9e-d045-4993-8a3e-4de6c0c86557",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.session_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        2016,
+        -432
+      ],
+      "id": "66a9f201-7eab-4829-beea-b7545ab617cb",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "dVTO25wNgGyklFzW",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un Asistente experto en Recursos Humanos y validación de perfiles. Tu tarea es analizar las ofertas de prácticas propuestas y determinar su relevancia para un postulante cuyo CV se encuentra guardado en la base de datos vectorial.\n\n**INSTRUCCIÓN PRINCIPAL:**\n1.  **Utiliza la herramienta Supabase Vector Store** para realizar la búsqueda de similitud entre el CV del postulante (cuyos datos se recuperarán internamente) y las descripciones de las prácticas.\n2.  La herramienta Supabase debe procesar la lista de prácticas y devolver el **porcentaje de similitud** (o un puntaje de relevancia) para cada una.\n3.  Una vez obtenidos los resultados con el puntaje de similitud, genera la respuesta final en formato **JSON** estrictamente.\n\n**DATOS DE ENTRADA:**\n* **ID de Sesión (Contexto):** {{ $json.sessionId }}\n* **Información del Postulante (CV para búsqueda):** {{ $json.postulante }}\n* **Prácticas a Evaluar (Array JSON):**\n    {{ JSON.stringify($json.results, null, 2) }}\n\n**FORMATO DE SALIDA REQUERIDO (JSON):**\n\nArroja un array de objetos con el siguiente formato, donde `<SIMILITUD_CALCULADA_POR_SUPABASE>` es el puntaje devuelto por la herramienta Supabase:\n\n```json\n[\n  {\n    \"title\": \"...\",\n    \"company\": \"...\",\n    \"location\": \"...\",\n    \"description\": \"...\",\n    \"similarity_percentage\": <SIMILITUD_CALCULADA_POR_SUPABASE>,\n    \"url\": \"...\"\n  }\n]",
+        "options": {
+          "systemMessage": ""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        3424,
+        -688
+      ],
+      "id": "d752f82c-a439-4686-8fbf-48c5b7b2ae16",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3424,
+        -512
+      ],
+      "id": "a4977247-3d3a-4d1b-b98d-d78eeead2980",
+      "name": "Google Gemini Chat Model3",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        3520,
+        -544
+      ],
+      "id": "cc2dd8f1-d5f4-4a14-ba0f-1aaeb0b362ee",
+      "name": "Postgres Chat Memory1",
+      "credentials": {
+        "postgres": {
+          "id": "dVTO25wNgGyklFzW",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Base de datos de los cvs",
+        "tableName": {
+          "__rl": true,
+          "value": "cvs_guardados",
+          "mode": "list",
+          "cachedResultName": "cvs_guardados"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        3488,
+        -416
+      ],
+      "id": "2087b50d-b4ea-4086-9231-7bd9abf734c9",
+      "name": "Supabase Vector Store2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "oUc0yMc0pGndmmsF",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3488,
+        -288
+      ],
+      "id": "fbf0a236-3ffa-4493-965c-3cc39d8a627a",
+      "name": "Embeddings Google Gemini2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* El nodo de Código recibe todos los ítems de entrada en la variable 'items' */\nconst allResults = [];\nlet sessionId = '';\nlet jobsData = [];\n\n// 1. Iterar sobre todos los ítems de entrada y consolidar los trabajos\nfor (const item of items) {\n    // Captura la sessionId del primer ítem que la tenga\n    if (!sessionId && item.json.sessionId) {\n        sessionId = $('Webhook').first().json.body.session_id;\n    }\n    \n    // Si el ítem es un array de trabajos\n    if (item.json.jobs && Array.isArray(item.json.jobs)) {\n        jobsData.push(...item.json.jobs); \n    } \n    // Si el ítem es un solo trabajo\n    else if (item.json.title && item.json.company) {\n        jobsData.push(item.json);\n    }\n}\n\n// Lógica de similitud (se mantiene el placeholder)\nfor (const job of jobsData) {\n    const similarity = Math.random(); \n\n    allResults.push({\n        title: job.title,\n        description: job.description,\n        // Incluye los campos originales para no perderlos, aunque estén en el output del Agente\n        company: job.company,\n        location: job.location,\n        url: job.url,\n        similarity_percentage: similarity * 100 \n    });\n}\n\n// 2. Lógica de Recuperación de Postulante (LA SOLUCIÓN A TU PROBLEMA)\n// Se usa el operador '||' (OR) para buscar el valor en el primer nodo que tenga datos.\n\nlet postulanteData = null;\n\n// Intenta recuperar de 'Edit Fields' (Edit Fields 1 en el JSON del flujo)\ntry {\n    postulanteData = $('Edit Fields1').first().json.text;\n} catch (e) {\n    // Ignorar si falla, significa que la ruta de 'Edit Fields1' no se ejecutó.\n}\n\n// Si no se encontró en 'Edit Fields1', intenta recuperar de 'Edit Fields' (Edit Fields en el JSON del flujo)\nif (!postulanteData) {\n    try {\n        // En tu flujo JSON, Edit Fields tiene ID: a746096b-b322-4b45-aa41-a7674d4b8006\n        // Edit Fields1 tiene ID: d703553a-3b12-43a1-bfbf-886626a42e64\n        // Usaremos los nombres visibles para mayor claridad, asumiendo que el nombre 'Edit Fields' se refiere a 'Edit Fields2' o 'Edit Fields'\n        \n        // El nodo \"Edit Fields\" del camino de abajo tiene el ID: d703553a-3b12-43a1-bfbf-886626a42e64\n        // El nodo \"Edit Fields\" del camino de arriba tiene el ID: a746096b-b322-4b45-aa41-a7674d4b8006\n        \n        // Ya que el n8n te devuelve error si un nodo no se ejecutó, el try/catch es la mejor forma.\n        // Asumiendo que quieres acceder a Edit Fields2 (el de la rama de arriba) o Edit Fields1 (el de la rama de abajo).\n\n        postulanteData = $('Edit Fields').first().json.text; \n    } catch (e) {\n        // Ignorar si falla.\n    }\n}\n\n// 3. Retornar el resultado en el formato esperado\nreturn [{\n    json: {\n        sessionId: sessionId,\n        results: allResults,\n        message: \"Lista de todas las prácticas con su nombre, descripcion, porcentaje de similitud del postulante\",\n        postulante: postulanteData || \"No se pudo recuperar el texto del CV.\"\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        -688
+      ],
+      "id": "7cacddfe-7a88-41e5-b8fc-dd30fabe90ed",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6382579-609b-4292-ae1c-bcc63e51b364",
+              "name": "text",
+              "value": "={{ $('Extraer datos1').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "c30065aa-27a9-4d8d-9d36-4145f1b3d595",
+              "name": "session_id",
+              "value": "={{ $('Webhook').item.json.body.sessionid }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1712,
+        -496
+      ],
+      "id": "a68eef56-e4d6-46d5-9953-024ceeb949ef",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6382579-609b-4292-ae1c-bcc63e51b364",
+              "name": "text",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "c30065aa-27a9-4d8d-9d36-4145f1b3d595",
+              "name": "session_id",
+              "value": "={{ $('Webhook').item.json.body.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        704,
+        128
+      ],
+      "id": "f761ffa5-80c3-45bc-b849-9c186814b892",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        4000,
+        -688
+      ],
+      "id": "f05f53e9-06ce-4166-8b90-16ff1cc04dd7",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* El nodo de Código recibe todos los ítems de entrada en la variable 'items' */\nconst allResults = [];\nlet sessionId = '';\nlet jobsData = [];\n\n// 1. Iterar sobre todos los ítems de entrada y consolidar los trabajos\nfor (const item of items) {\n    // Captura la sessionId del primer ítem que la tenga\n    if (!sessionId && item.json.sessionId) {\n        sessionId = $('Webhook').first().json.body.session_id;\n    }\n    \n    // Si el ítem es un array de trabajos\n    if (item.json.jobs && Array.isArray(item.json.jobs)) {\n        jobsData.push(...item.json.jobs); \n    } \n    // Si el ítem es un solo trabajo\n    else if (item.json.title && item.json.company) {\n        jobsData.push(item.json);\n    }\n}\n\n// Lógica de similitud (se mantiene el placeholder)\nfor (const job of jobsData) {\n    const similarity = Math.random(); \n\n    allResults.push({\n        title: job.title,\n        description: job.description,\n        // Incluye los campos originales para no perderlos, aunque estén en el output del Agente\n        company: job.company,\n        location: job.location,\n        url: job.url,\n        similarity_percentage: similarity * 100 \n    });\n}\n\n// 2. Lógica de Recuperación de Postulante (LA SOLUCIÓN A TU PROBLEMA)\n// Se usa el operador '||' (OR) para buscar el valor en el primer nodo que tenga datos.\n\nlet postulanteData = null;\n\n// Intenta recuperar de 'Edit Fields' (Edit Fields 1 en el JSON del flujo)\ntry {\n    postulanteData = $('Edit Fields1').first().json.text;\n} catch (e) {\n    // Ignorar si falla, significa que la ruta de 'Edit Fields1' no se ejecutó.\n}\n\n// Si no se encontró en 'Edit Fields1', intenta recuperar de 'Edit Fields' (Edit Fields en el JSON del flujo)\nif (!postulanteData) {\n    try {\n        // En tu flujo JSON, Edit Fields tiene ID: a746096b-b322-4b45-aa41-a7674d4b8006\n        // Edit Fields1 tiene ID: d703553a-3b12-43a1-bfbf-886626a42e64\n        // Usaremos los nombres visibles para mayor claridad, asumiendo que el nombre 'Edit Fields' se refiere a 'Edit Fields2' o 'Edit Fields'\n        \n        // El nodo \"Edit Fields\" del camino de abajo tiene el ID: d703553a-3b12-43a1-bfbf-886626a42e64\n        // El nodo \"Edit Fields\" del camino de arriba tiene el ID: a746096b-b322-4b45-aa41-a7674d4b8006\n        \n        // Ya que el n8n te devuelve error si un nodo no se ejecutó, el try/catch es la mejor forma.\n        // Asumiendo que quieres acceder a Edit Fields2 (el de la rama de arriba) o Edit Fields1 (el de la rama de abajo).\n\n        postulanteData = $('Edit Fields').first().json.text; \n    } catch (e) {\n        // Ignorar si falla.\n    }\n}\n\n// 3. Retornar el resultado en el formato esperado\nreturn [{\n    json: {\n        sessionId: sessionId,\n        results: allResults,\n        message: \"Lista de todas las prácticas con su nombre, descripcion, porcentaje de similitud del postulante\",\n        postulante: postulanteData || \"No se pudo recuperar el texto del CV.\"\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        112
+      ],
+      "id": "d58f22ea-88b9-4235-b760-df5c9925b54b",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// La variable 'items' contiene el único ítem de salida del AI Agent\nconst agentOutputItem = items[0].json; \nconst consolidatedJobs = []; // Cambiamos el nombre para reflejar la consolidación\n\n// 1. LIMPIEZA DE LA SALIDA DEL AGENTE\n// Elimina las cercas de código Markdown (```json) y cualquier texto extra.\nconst rawOutput = String(agentOutputItem.rawOutput || agentOutputItem.output);\nlet jsonString = rawOutput\n    .trim()\n    .replace(/^```json\\s*/i, '') // Elimina la etiqueta inicial ```json\n    .replace(/\\s*```$/, '');      // Elimina la etiqueta final ```\n\n// 2. Parsear el JSON\nlet rawJobs;\ntry {\n    rawJobs = JSON.parse(jsonString);\n} catch (e) {\n    console.error(\"Fallo al parsear el JSON del Agente después de limpiar:\", e);\n    // Retorna una respuesta de error en el formato final consolidado\n    return [{\n        json: {\n            error: true,\n            message: \"Fallo al procesar el JSON del Agente.\",\n            rawOutput: rawOutput,\n            jobs: []\n        }\n    }];\n}\n\n// 3. Normalizar y simplificar cada objeto de práctica\nfor (const job of rawJobs) {\n    // Limpieza de la descripción\n    const cleanedDescription = String(job.description || '')\n        .replace(/\\\\n/g, ' ') \n        .replace(/\\s+/g, ' ') \n        .trim();\n\n    // Redondear el porcentaje de similitud a 2 decimales\n    const roundedSimilarity = parseFloat(job.similarity_percentage).toFixed(2);\n\n    consolidatedJobs.push({\n        title: job.title,\n        company: job.company || 'N/A',\n        location: job.location || 'N/A',\n        description: cleanedDescription,\n        similarity_percentage: roundedSimilarity,\n        url: job.url || 'N/A',\n    });\n}\n\n// 4. Retornar el resultado como UN ÚNICO ÍTEM DE N8N\n// El array 'consolidatedJobs' ahora es la propiedad 'jobs' dentro de un objeto JSON único.\nreturn [{\n    json: {\n        success: true,\n        total_jobs: consolidatedJobs.length,\n        jobs: consolidatedJobs\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2752,
+        112
+      ],
+      "id": "aa1b76b6-a2ad-4683-b04c-6e6a00a30ba0",
+      "name": "Code in JavaScript1",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un Asistente experto en Recursos Humanos y validación de perfiles. Tu tarea es analizar las ofertas de prácticas propuestas y determinar su relevancia para un postulante cuyo CV se encuentra guardado en la base de datos vectorial.\n\n**INSTRUCCIÓN PRINCIPAL:**\n1.  **Utiliza el modelo de gemini** para realizar la búsqueda de similitud entre el CV del postulante (cuyos datos se recuperarán internamente) y las descripciones de las prácticas.\n2.  La herramienta Supabase debe procesar la lista de prácticas y devolver el **porcentaje de similitud** (o un puntaje de relevancia) para cada una.\n3.  Una vez obtenidos los resultados con el puntaje de similitud, genera la respuesta final en formato **JSON** estrictamente.\n\n**DATOS DE ENTRADA:**\n* **ID de Sesión (Contexto):** {{ $json.sessionId }}\n* **Información del Postulante (CV para búsqueda):** {{ $json.postulante }}\n* **Prácticas a Evaluar (Array JSON):**\n    {{ JSON.stringify($json.results, null, 2) }}\n\n**FORMATO DE SALIDA REQUERIDO (JSON):**\n\nArroja un array de objetos con el siguiente formato, donde `<SIMILITUD_CALCULADA_POR_SUPABASE>` es el puntaje devuelto por la herramienta Supabase:\n\n```json\n[\n  {\n    \"title\": \"...\",\n    \"company\": \"...\",\n    \"location\": \"...\",\n    \"description\": \"...\",\n    \"similarity_percentage\": <SIMILITUD_CALCULADA_POR_SUPABASE>,\n    \"url\": \"...\"\n  }\n]",
+        "options": {
+          "systemMessage": ""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        112
+      ],
+      "id": "1d3757aa-2cab-4dcf-8532-9a276f216940",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash-lite-001",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        240
+      ],
+      "id": "251b9769-7c4d-464e-93ca-ba86eac1422b",
+      "name": "Google Gemini Chat Model4",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4c6Xjv9L0QPFQP6t",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        2496,
+        288
+      ],
+      "id": "2a1f1647-c473-4900-bd72-89cccebaa39e",
+      "name": "Postgres Chat Memory2",
+      "credentials": {
+        "postgres": {
+          "id": "dVTO25wNgGyklFzW",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2960,
+        112
+      ],
+      "id": "2753aa40-100b-442d-95bc-42e43e7717bb",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawOutput = $json.output;\n\n// Limpieza: elimina saltos de línea y trim() para eliminar espacios en blanco (incluyendo \\n) al inicio y final\nconst cleanOutput = rawOutput.replace(/[\\n\\t\\r]/g, '').trim();\n\nreturn [{\n    json: {\n        puesto_sugerido: cleanOutput \n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        144
+      ],
+      "id": "2224f6d2-5ae0-42bf-80a1-beee915ac4b3",
+      "name": "limipiar respuesta"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/misceres~indeed-scraper/runs?token=apify_api_l78nPpgDfOHUmRrtt7yP11jDRbFdoI0cI5Pd&waitForFinish=300",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"country\": \"PE\",\n    \"followApplyRedirects\": false,\n    \"maxItems\": 5,\n    \"parseCompanyDetails\": false,\n    \"position\": \"{{ $json.puesto_sugerido }}\",\n    \"saveOnlyUniqueItems\": true\n}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        240
+      ],
+      "id": "c46cf7db-46c4-40e6-a12d-65e6b8dab4c5",
+      "name": "Indeed Sraper"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawOutput = $json.output;\n\n// Limpieza: elimina saltos de línea y trim() para eliminar espacios en blanco (incluyendo \\n) al inicio y final\nconst cleanOutput = rawOutput.replace(/[\\n\\t\\r]/g, '').trim();\n\nreturn [{\n    json: {\n        puesto_sugerido: cleanOutput \n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -592
+      ],
+      "id": "90c022cb-9276-49e4-ae7b-44d9761d38c6",
+      "name": "limipiar respuesta1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawOutput = $json.output;\n\n// Limpieza: elimina saltos de línea y trim() para eliminar espacios en blanco (incluyendo \\n) al inicio y final\nconst cleanOutput = rawOutput.replace(/[\\n\\t\\r]/g, '').trim();\n\nreturn [{\n    json: {\n        puesto_sugerido: cleanOutput \n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        -672
+      ],
+      "id": "ccab6a52-1e76-427b-8cb5-6cb457ac223a",
+      "name": "limipiar respuesta2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linkedin Scraper": {
+      "main": [
+        [
+          {
+            "node": "Obtener datos Linkedin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer datos": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizador con IA": {
+      "main": [
+        [
+          {
+            "node": "limipiar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener datos Linkedin": {
+      "main": [
+        [
+          {
+            "node": "Normalizacion Indeed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener datos Indeed": {
+      "main": [
+        [
+          {
+            "node": "Normalizacion Linkedin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizacion Linkedin": {
+      "main": [
+        [
+          {
+            "node": "Une Datos",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalizacion Indeed": {
+      "main": [
+        [
+          {
+            "node": "Une Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Une Datos": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extraer datos1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraer datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader1": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analizador con IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "limipiar respuesta1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer datos1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Indeed Sraper1": {
+      "main": [
+        [
+          {
+            "node": "Obtener datos Indeed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linkedin Scraper1": {
+      "main": [
+        [
+          {
+            "node": "Obtener datos Linkedin1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizador con IA1": {
+      "main": [
+        [
+          {
+            "node": "limipiar respuesta2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener datos Indeed1": {
+      "main": [
+        [
+          {
+            "node": "Normalizacion Linkedin1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener datos Linkedin1": {
+      "main": [
+        [
+          {
+            "node": "Normalizacion Indeed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizacion Linkedin1": {
+      "main": [
+        [
+          {
+            "node": "Une Datos1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalizacion Indeed1": {
+      "main": [
+        [
+          {
+            "node": "Une Datos1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Une Datos1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analizador con IA1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Analizador con IA1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Analizador con IA1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store2": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini2": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store2",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Analizador con IA1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Analizador con IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory2": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "limipiar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Linkedin Scraper",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Sraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Indeed Sraper": {
+      "main": [
+        [
+          {
+            "node": "Obtener datos Indeed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "limipiar respuesta1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "limipiar respuesta2": {
+      "main": [
+        [
+          {
+            "node": "Linkedin Scraper1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Sraper1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3059f48a-4244-467d-961c-c5f6a7d33570",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e5233b902455658be825e286e42d99a0fa27b4e281cc66720b05dfc4d6f4a39a"
+  },
+  "id": "xsHrluSAMOhrqmyL",
+  "tags": []
+}
